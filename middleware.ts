@@ -1,0 +1,88 @@
+// middleware.ts
+
+import { type NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import type { Database } from "@/lib/types";
+
+function getPublicSupabaseConfig() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL environment variable.");
+  }
+
+  if (!supabaseAnonKey) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable.");
+  }
+
+  return {
+    supabaseUrl,
+    supabaseAnonKey
+  };
+}
+
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({
+    request
+  });
+
+  const { supabaseUrl, supabaseAnonKey } = getPublicSupabaseConfig();
+
+  const supabase = createServerClient<Database>(
+    supabaseUrl,
+    supabaseAnonKey,
+    {
+      cookies: {
+        get(name: string) {
+          return request.cookies.get(name)?.value;
+        },
+        set(name: string, value: string, options) {
+          request.cookies.set({
+            name,
+            value,
+            ...options
+          });
+
+          response = NextResponse.next({
+            request
+          });
+
+          response.cookies.set({
+            name,
+            value,
+            ...options
+          });
+        },
+        remove(name: string, options) {
+          request.cookies.set({
+            name,
+            value: "",
+            ...options
+          });
+
+          response = NextResponse.next({
+            request
+          });
+
+          response.cookies.set({
+            name,
+            value: "",
+            ...options,
+            maxAge: 0
+          });
+        }
+      }
+    }
+  );
+
+  await supabase.auth.getUser();
+
+  return response;
+}
+
+export const config = {
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|og/default.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
+  ]
+};
